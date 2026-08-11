@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  cowrie:
+    image: cowrie/cowrie:latest
+    container_name: cowrie
+    restart: unless-stopped
+    ports:
+      - "2222:2222"   # SSH honeypot
+      - "2223:2223"   # Telnet honeypot
+    volumes:
+      - ./cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - cowrie_logs:/cowrie/cowrie-git/var/log/cowrie
+      - cowrie_data:/cowrie/cowrie-git/var/lib/cowrie
+    environment:
+      - COWRIE_TELNET_ENABLED=yes
+
+  dashboard:
+    build: ./dashboard
+    container_name: cowrie-dashboard
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - cowrie_logs:/logs:ro
+    depends_on:
+      - cowrie
+
+volumes:
+  cowrie_logs:
+  cowrie_data:
