@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cowrie Honeypot Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background: #0f172a; }
+        .card { background: #1e293b; border: 1px solid #334155; }
+        .feed-row:hover { background: #334155; }
+    </style>
+</head>
+<body class="text-slate-200 min-h-screen">
+    <div class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-cyan-400">Cowrie Honeypot</h1>
+                <p class="text-slate-400 text-sm">Real-time Attack Intelligence Dashboard</p>
+            </div>
+            <div class="text-right">
+                <div id="last-update" class="text-sm text-slate-400">Loading...</div>
+                <div class="text-xs text-emerald-400 mt-1">● Live</div>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+            <div class="card rounded-xl p-4 text-center">
+                <div class="text-2xl font-bold text-cyan-400" id="stat-events">0</div>
+                <div class="text-xs text-slate-400 mt-1">Total Events</div>
+            </div>
+            <div class="card rounded-xl p-4 text-center">
+                <div class="text-2xl font-bold text-rose-400" id="stat-failed">0</div>
+                <div class="text-xs text-slate-400 mt-1">Failed Logins</div>
+            </div>
+            <div class="card rounded-xl p-4 text-center">
+                <div class="text-2xl font-bold text-emerald-400" id="stat-success">0</div>
+                <div class="text-xs text-slate-400 mt-1">Successful Logins</div>
+            </div>
+            <div class="card rounded-xl p-4 text-center">
+                <div class="text-2xl font-bold text-amber-400" id="stat-ips">0</div>
+                <div class="text-xs text-slate-400 mt-1">Unique IPs</div>
+            </div>
+            <div class="card rounded-xl p-4 text-center">
+                <div class="text-2xl font-bold text-violet-400" id="stat-cmds">0</div>
+                <div class="text-xs text-slate-400 mt-1">Commands</div>
+            </div>
+            <div class="card rounded-xl p-4 text-center">
+                <div class="text-2xl font-bold text-sky-400" id="stat-sessions">0</div>
+                <div class="text-xs text-slate-400 mt-1">Sessions</div>
+            </div>
+        </div>
+
+        <!-- Charts + Top Lists -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div class="card rounded-xl p-5 lg:col-span-2">
+                <h3 class="text-lg font-semibold mb-4 text-slate-300">Attacks Over Time (Last 24h)</h3>
+                <canvas id="timelineChart" height="120"></canvas>
+            </div>
+            <div class="card rounded-xl p-5">
+                <h3 class="text-lg font-semibold mb-4 text-slate-300">Top Countries</h3>
+                <canvas id="countryChart" height="200"></canvas>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="card rounded-xl p-5">
+                <h3 class="text-lg font-semibold mb-3 text-slate-300">Top Usernames</h3>
+                <div id="top-users" class="space-y-2 text-sm"></div>
+            </div>
+            <div class="card rounded-xl p-5">
+                <h3 class="text-lg font-semibold mb-3 text-slate-300">Top Passwords</h3>
+                <div id="top-pass" class="space-y-2 text-sm"></div>
+            </div>
+            <div class="card rounded-xl p-5">
+                <h3 class="text-lg font-semibold mb-3 text-slate-300">Top Commands</h3>
+                <div id="top-cmds" class="space-y-2 text-sm font-mono text-xs"></div>
+            </div>
+        </div>
+
+        <!-- Live Feed -->
+        <div class="card rounded-xl p-5">
+            <h3 class="text-lg font-semibold mb-4 text-slate-300">Live Attack Feed</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-slate-400 border-b border-slate-600">
+                            <th class="pb-2 pr-4">Time</th>
+                            <th class="pb-2 pr-4">Event</th>
+                            <th class="pb-2 pr-4">IP</th>
+                            <th class="pb-2 pr-4">Country</th>
+                            <th class="pb-2 pr-4">User</th>
+                            <th class="pb-2 pr-4">Password / Command</th>
+                        </tr>
+                    </thead>
+                    <tbody id="feed-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let timelineChart, countryChart;
+
+        async function refresh() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+
+                // Stats
+                document.getElementById('stat-events').textContent = data.total_events || 0;
+                document.getElementById('stat-failed').textContent = data.failed_logins || 0;
+                document.getElementById('stat-success').textContent = data.success_logins || 0;
+                document.getElementById('stat-ips').textContent = data.unique_ips || 0;
+                document.getElementById('stat-cmds').textContent = data.commands || 0;
+                document.getElementById('stat-sessions').textContent = data.sessions || 0;
+                document.getElementById('last-update').textContent = 'Updated: ' + (data.last_update || '-');
+
+                // Top lists
+                document.getElementById('top-users').innerHTML = (data.top_usernames || [])
+                    .map(([u, c]) => `<div class="flex justify-between"><span class="font-mono">${u || '(empty)'}</span><span class="text-cyan-400">${c}</span></div>`).join('');
+                document.getElementById('top-pass').innerHTML = (data.top_passwords || [])
+                    .map(([p, c]) => `<div class="flex justify-between"><span class="font-mono">${p || '(empty)'}</span><span class="text-rose-400">${c}</span></div>`).join('');
+                document.getElementById('top-cmds').innerHTML = (data.top_commands || [])
+                    .map(([cmd, c]) => `<div class="flex justify-between gap-2"><span class="truncate">${cmd}</span><span class="text-amber-400 shrink-0">${c}</span></div>`).join('');
+
+                // Feed
+                const tbody = document.getElementById('feed-body');
+                tbody.innerHTML = (data.feed || []).map(row => {
+                    const color = row.event.includes('failed') ? 'text-rose-400' :
+                                  row.event.includes('success') ? 'text-emerald-400' :
+                                  row.event.includes('command') ? 'text-amber-400' : 'text-slate-300';
+                    const detail = row.cmd !== '-' ? row.cmd : (row.user + ' / ' + row.password);
+                    return `<tr class="feed-row border-b border-slate-700/50">
+                        <td class="py-2 pr-4 whitespace-nowrap text-slate-400">${row.time}</td>
+                        <td class="py-2 pr-4 ${color}">${row.event}</td>
+                        <td class="py-2 pr-4 font-mono text-xs">${row.ip}</td>
+                        <td class="py-2 pr-4">${row.country}</td>
+                        <td class="py-2 pr-4 font-mono">${row.user}</td>
+                        <td class="py-2 pr-4 font-mono text-xs truncate max-w-xs">${detail}</td>
+                    </tr>`;
+                }).join('');
+
+                // Charts
+                updateCharts(data);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function updateCharts(data) {
+            // Timeline
+            const labels = Object.keys(data.timeline || {});
+            const values = Object.values(data.timeline || {});
+            if (!timelineChart) {
+                timelineChart = new Chart(document.getElementById('timelineChart'), {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Events',
+                            data: values,
+                            borderColor: '#22d3ee',
+                            backgroundColor: 'rgba(34, 211, 238, 0.1)',
+                            fill: true,
+                            tension: 0.3
+                        }]
+                    },
+                    options: {
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { color: '#334155' } },
+                            y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } }
+                        }
+                    }
+                });
+            } else {
+                timelineChart.data.labels = labels;
+                timelineChart.data.datasets[0].data = values;
+                timelineChart.update();
+            }
+
+            // Countries
+            const cLabels = (data.top_countries || []).map(x => x[0]);
+            const cValues = (data.top_countries || []).map(x => x[1]);
+            if (!countryChart) {
+                countryChart = new Chart(document.getElementById('countryChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: cLabels,
+                        datasets: [{
+                            data: cValues,
+                            backgroundColor: ['#22d3ee', '#f43f5e', '#a78bfa', '#fbbf24', '#34d399', '#60a5fa', '#fb7185', '#c084fc']
+                        }]
+                    },
+                    options: {
+                        plugins: { legend: { position: 'bottom', labels: { color: '#cbd5e1', boxWidth: 12 } } }
+                    }
+                });
+            } else {
+                countryChart.data.labels = cLabels;
+                countryChart.data.datasets[0].data = cValues;
+                countryChart.update();
+            }
+        }
+
+        refresh();
+        setInterval(refresh, 5000);  // refresh every 5 seconds
+    </script>
+</body>
+</html>
